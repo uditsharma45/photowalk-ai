@@ -34,7 +34,10 @@ const missionFixtures = {
 export function getMissionForDirection(creativeDirection) {
   if (creativeDirection === "Surprise Me") {
     const missions = Object.values(missionFixtures);
-    return missions[Math.floor(Math.random() * missions.length)];
+    return {
+      ...missions[Math.floor(Math.random() * missions.length)],
+      focus: creativeDirection,
+    };
   }
 
   const mission = missionFixtures[creativeDirection];
@@ -42,5 +45,5 @@ export function getMissionForDirection(creativeDirection) {
     throw new Error(`No mission fixture found for creative direction: ${creativeDirection}`);
   }
 
-  return mission;
+  return { ...mission, focus: creativeDirection };
 }

@@ -936,13 +936,6 @@ a:focus-visible {
   border-top: 0;
 }
 
-.walk-start-message {
-  margin: 1.3rem 0 0;
-  color: var(--color-accent);
-  font-size: 0.86rem;
-  line-height: 1.6;
-}
-
 .mission-side-note {
   position: absolute;
   right: max(1.5rem, calc((100vw - 1180px) / 2));
@@ -954,6 +947,244 @@ a:focus-visible {
   font-family: var(--font-mono);
   font-size: 0.55rem;
   letter-spacing: 0.12em;
+}
+
+.walk-mode {
+  display: flex;
+  width: min(100% - 3rem, 760px);
+  min-height: 100svh;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 auto;
+  padding: 3rem 0;
+}
+
+.walk-mode-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgb(243 240 233 / 16%);
+}
+
+.walk-mode-topline .section-label {
+  margin: 0;
+  font-size: 0.7rem;
+}
+
+.walk-mode-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #96988e;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.12em;
+}
+
+.walk-timer {
+  margin: clamp(2rem, 7vh, 5rem) 0 clamp(2.4rem, 8vh, 5rem);
+  color: var(--color-accent);
+  font-family: var(--font-editorial);
+  font-size: clamp(7rem, 25vw, 14rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.08em;
+  line-height: 0.85;
+  text-align: center;
+}
+
+.active-mission {
+  max-width: 650px;
+  margin: 0 auto;
+}
+
+.active-mission .mission-kicker {
+  margin-bottom: 0.9rem;
+}
+
+.active-mission h1,
+.walk-finished h1 {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: clamp(2.8rem, 6.5vw, 5.4rem);
+  font-weight: 400;
+  letter-spacing: -0.05em;
+  line-height: 1.05;
+}
+
+.active-mission h1:focus,
+.walk-finished h1:focus {
+  outline: none;
+}
+
+.active-mission-description {
+  max-width: 590px;
+  margin: 1.1rem 0 0;
+  color: #b8b9ae;
+  font-size: clamp(0.9rem, 2vw, 1rem);
+  line-height: 1.8;
+}
+
+.active-focus {
+  display: flex;
+  align-items: baseline;
+  gap: 1.1rem;
+  margin: clamp(2rem, 6vh, 3.5rem) 0;
+  padding-top: 1rem;
+  border-top: 1px solid rgb(243 240 233 / 16%);
+}
+
+.active-focus span {
+  color: #919389;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.14em;
+}
+
+.active-focus p {
+  margin: 0;
+  color: var(--color-text);
+  font-family: var(--font-editorial);
+  font-size: 1.35rem;
+}
+
+.end-walk-button {
+  width: fit-content;
+  min-width: 156px;
+  min-height: 54px;
+  align-self: center;
+  padding: 0.8rem 1.4rem;
+  border: 1px solid rgb(243 240 233 / 36%);
+  color: #e0dfd7;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    background-color 180ms ease;
+}
+
+.end-walk-button:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: rgb(196 209 123 / 5%);
+}
+
+.end-walk-dialog {
+  width: min(calc(100% - 2rem), 440px);
+  padding: clamp(1.5rem, 6vw, 2.5rem);
+  border: 1px solid rgb(196 209 123 / 40%);
+  color: var(--color-text);
+  background: #191b17;
+  box-shadow: 0 24px 90px rgb(0 0 0 / 45%);
+}
+
+.end-walk-dialog::backdrop {
+  background: rgb(7 8 7 / 78%);
+  backdrop-filter: blur(5px);
+}
+
+.end-walk-dialog .section-label {
+  margin-bottom: 1rem;
+}
+
+.end-walk-dialog h2 {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: clamp(2rem, 8vw, 3rem);
+  font-weight: 400;
+  letter-spacing: -0.04em;
+}
+
+.end-walk-dialog > p:not(.section-label) {
+  margin: 0.9rem 0 0;
+  color: #b8b9ae;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.dialog-actions .continue-button {
+  min-width: 138px;
+}
+
+.walk-finished {
+  display: flex;
+  width: min(100% - 3rem, 760px);
+  min-height: 100svh;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  margin: 0 auto;
+  padding: 4rem 0;
+  animation: flow-enter 420ms ease-out both;
+}
+
+.walk-finished > .section-label {
+  margin-bottom: clamp(3rem, 8vh, 5rem);
+}
+
+.finished-kicker {
+  margin: 0 0 0.9rem;
+  color: #9b9d91;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+}
+
+.walk-finished h1 {
+  color: var(--color-accent);
+  font-size: clamp(3.2rem, 9vw, 7rem);
+}
+
+.finished-message {
+  max-width: 560px;
+  margin: 1.2rem 0 0;
+  color: #d1d0c8;
+  font-size: clamp(1rem, 2.5vw, 1.2rem);
+  line-height: 1.7;
+}
+
+.finished-mission {
+  width: 100%;
+  margin: clamp(2rem, 6vh, 3.5rem) 0 2rem;
+  padding: 1.2rem 0;
+  border-top: 1px solid rgb(243 240 233 / 16%);
+  border-bottom: 1px solid rgb(243 240 233 / 16%);
+}
+
+.finished-mission .mission-kicker {
+  margin-bottom: 0.7rem;
+}
+
+.finished-mission h2 {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: clamp(1.5rem, 4vw, 2.1rem);
+  font-weight: 400;
+}
+
+.finished-mission > p:last-child {
+  max-width: 610px;
+  margin: 0.7rem 0 0;
+  color: #aeb0a5;
+  font-size: 0.84rem;
+  line-height: 1.7;
+}
+
+.done-button {
+  min-width: 152px;
 }
 
 @keyframes flow-enter {
@@ -1351,6 +1582,79 @@ a:focus-visible {
     right: 1.25rem;
     bottom: 1.5rem;
     font-size: 0.49rem;
+  }
+
+  .walk-mode,
+  .walk-finished {
+    width: calc(100% - 2.5rem);
+    min-height: 100svh;
+    padding: max(2rem, env(safe-area-inset-top)) 0 max(2rem, env(safe-area-inset-bottom));
+  }
+
+  .walk-mode {
+    justify-content: flex-start;
+  }
+
+  .walk-mode-topline .section-label {
+    font-size: 0.61rem;
+  }
+
+  .walk-mode-live {
+    font-size: 0.49rem;
+  }
+
+  .walk-timer {
+    margin: clamp(3rem, 9vh, 5rem) 0 clamp(3rem, 9vh, 5rem);
+    font-size: clamp(7rem, 31vw, 10rem);
+  }
+
+  .active-mission h1 {
+    font-size: clamp(2.8rem, 11.5vw, 4rem);
+  }
+
+  .active-mission-description {
+    font-size: 0.89rem;
+    line-height: 1.75;
+  }
+
+  .active-focus {
+    margin: 2rem 0;
+  }
+
+  .end-walk-button {
+    align-self: stretch;
+  }
+
+  .walk-finished {
+    justify-content: flex-start;
+    padding-top: clamp(5rem, 15vh, 8rem);
+  }
+
+  .walk-finished > .section-label {
+    margin-bottom: clamp(3rem, 9vh, 5rem);
+  }
+
+  .walk-finished h1 {
+    font-size: clamp(3.2rem, 13vw, 5rem);
+  }
+
+  .finished-message {
+    font-size: 1rem;
+  }
+
+  .end-walk-dialog {
+    margin: auto;
+  }
+
+  .dialog-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .dialog-actions .continue-button,
+  .dialog-actions .text-button {
+    min-height: 50px;
+    justify-content: center;
   }
 }
 

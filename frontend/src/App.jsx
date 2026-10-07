@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import WalkMode from "./components/WalkMode.jsx";
 import { getMissionForDirection } from "./services/missionService.js";
 
 const steps = [
@@ -307,13 +308,7 @@ function WalkSetup({ settings, onChange, onBack, onContinue, headingRef }) {
   );
 }
 
-function MissionPreview({ settings, mission, onBack, headingRef }) {
-  const [startMessage, setStartMessage] = useState("");
-
-  function startWalk() {
-    setStartMessage("Your mission is ready. Put your phone away and enjoy the walk.");
-  }
-
+function MissionPreview({ settings, mission, onBack, onStart, headingRef }) {
   return (
     <div className="walk-flow">
       <FlowHeader onBack={onBack} />
@@ -335,7 +330,7 @@ function MissionPreview({ settings, mission, onBack, headingRef }) {
             </div>
             <div>
               <dt>Focus</dt>
-              <dd>{settings.creativeDirection}</dd>
+              <dd>{mission.focus}</dd>
             </div>
           </dl>
 
@@ -343,15 +338,10 @@ function MissionPreview({ settings, mission, onBack, headingRef }) {
             <button className="text-button" onClick={onBack} type="button">
               <span aria-hidden="true">←</span> Back
             </button>
-            <button className="continue-button start-walk-button" onClick={startWalk} type="button">
+            <button className="continue-button start-walk-button" onClick={onStart} type="button">
               Start walk <span aria-hidden="true">↗</span>
             </button>
           </div>
-          {startMessage && (
-            <p className="walk-start-message" role="status">
-              {startMessage}
-            </p>
-          )}
         </div>
         <div className="mission-side-note" aria-hidden="true">
           <span className="note-dot" />
@@ -370,14 +360,34 @@ export default function App() {
     creativeDirection: "",
   });
   const [generatedMission, setGeneratedMission] = useState(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [walkStatus, setWalkStatus] = useState("idle");
   const headingRef = useRef(null);
 
   useEffect(() => {
-    if (screen !== "landing") {
+    if (screen === "landing") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
       headingRef.current?.focus();
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  }, [screen]);
+  }, [screen, walkStatus]);
+
+  useEffect(() => {
+    if (screen !== "walk" || walkStatus !== "active") return undefined;
+
+    const intervalId = window.setInterval(() => {
+      setRemainingSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [screen, walkStatus]);
+
+  useEffect(() => {
+    if (screen === "walk" && walkStatus === "active" && remainingSeconds === 0) {
+      setWalkStatus("completed");
+    }
+  }, [screen, walkStatus, remainingSeconds]);
 
   function updateSetting(key, value) {
     setSettings((currentSettings) => ({ ...currentSettings, [key]: value }));
@@ -390,6 +400,24 @@ export default function App() {
   function showMission() {
     setGeneratedMission(getMissionForDirection(settings.creativeDirection));
     setScreen("preview");
+  }
+
+  function startWalk() {
+    setRemainingSeconds(Number.parseInt(settings.duration, 10) * 60);
+    setWalkStatus("active");
+    setScreen("walk");
+  }
+
+  function finishWalk() {
+    setWalkStatus("idle");
+    setRemainingSeconds(0);
+    setGeneratedMission(null);
+    setSettings({
+      duration: "",
+      experience: "",
+      creativeDirection: "",
+    });
+    setScreen("landing");
   }
 
   return (
@@ -424,11 +452,23 @@ export default function App() {
           onContinue={showMission}
           headingRef={headingRef}
         />
-      ) : (
+      ) : screen === "preview" ? (
         <MissionPreview
           settings={settings}
           mission={generatedMission}
           onBack={() => setScreen("setup")}
+          onStart={startWalk}
+          headingRef={headingRef}
+        />
+      ) : (
+        <WalkMode
+          mission={generatedMission}
+          remainingSeconds={remainingSeconds}
+          status={walkStatus}
+          onRequestEnd={() => setWalkStatus("confirmingEnd")}
+          onKeepWalking={() => setWalkStatus("active")}
+          onConfirmEnd={() => setWalkStatus("ended")}
+          onDone={finishWalk}
           headingRef={headingRef}
         />
       )}
