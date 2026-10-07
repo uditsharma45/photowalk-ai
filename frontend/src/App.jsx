@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getMissionForDirection } from "./services/missionService.js";
 
 const steps = [
   {
@@ -27,33 +28,18 @@ function SectionLabel({ children }) {
   return <p className="section-label">{children}</p>;
 }
 
-function StartWalkButton({ className = "" }) {
-  const [message, setMessage] = useState("");
-
+function StartWalkButton({ className = "", onClick }) {
   return (
-    <>
-      <button
-        className={`start-button ${className}`.trim()}
-        onClick={() =>
-          setMessage("Walk setup is coming soon. For now, see how it works below.")
-        }
-        type="button"
-      >
-        <span>Start a photowalk</span>
-        <span className="button-arrow" aria-hidden="true">
-          ↗
-        </span>
-      </button>
-      {message && (
-        <p className="button-message" role="status">
-          {message} <a href="#how-it-works">How it works</a>
-        </p>
-      )}
-    </>
+    <button className={`start-button ${className}`.trim()} onClick={onClick} type="button">
+      <span>Start a photowalk</span>
+      <span className="button-arrow" aria-hidden="true">
+        ↗
+      </span>
+    </button>
   );
 }
 
-function Header() {
+function Header({ onStart }) {
   return (
     <header className="site-header">
       <a className="wordmark" href="#top" aria-label="PhotoWalk AI home">
@@ -66,14 +52,14 @@ function Header() {
         <a href="#how-it-works">How it works</a>
         <a href="#why-photowalk">Our philosophy</a>
       </nav>
-      <a className="header-link" href="#start">
+      <button className="header-link" onClick={onStart} type="button">
         Get outside <span aria-hidden="true">↗</span>
-      </a>
+      </button>
     </header>
   );
 }
 
-function Hero() {
+function Hero({ onStart }) {
   return (
     <section className="hero" id="top" aria-labelledby="hero-title">
       <div className="hero-copy">
@@ -87,7 +73,7 @@ function Hero() {
           Turn your next walk into a creative photography adventure.
         </p>
         <div className="hero-action">
-          <StartWalkButton />
+          <StartWalkButton onClick={onStart} />
           <p className="hero-note">
             AI-powered photography missions
             <br />
@@ -200,41 +186,252 @@ function ProgressPreview() {
   );
 }
 
-function FinalCallToAction() {
+function FinalCallToAction({ onStart }) {
   return (
     <section className="final-cta" id="start">
       <SectionLabel>THE WORLD IS WAITING</SectionLabel>
       <h2>Ready to see differently?</h2>
-      <StartWalkButton className="start-button-light" />
+      <StartWalkButton className="start-button-light" onClick={onStart} />
       <p>One walk is all it takes to begin.</p>
     </section>
   );
 }
 
+const durationOptions = ["15 minutes", "30 minutes", "60 minutes"];
+const experienceOptions = ["Beginner", "Intermediate", "Advanced"];
+const creativeDirections = [
+  "Composition",
+  "Light & Shadow",
+  "Nature",
+  "Street",
+  "Architecture",
+  "Abstract",
+  "Surprise Me",
+];
+
+function OptionGroup({ title, options, value, onSelect, className = "" }) {
+  const groupId = `option-${title.toLowerCase().replaceAll(" ", "-")}`;
+
+  return (
+    <fieldset className={`option-group ${className}`.trim()}>
+      <legend id={groupId}>{title}</legend>
+      <div className="option-grid">
+        {options.map((option, index) => (
+          <button
+            aria-pressed={value === option}
+            className={`option-card${value === option ? " is-selected" : ""}`}
+            key={option}
+            onClick={() => onSelect(option)}
+            type="button"
+          >
+            <span className="option-index" aria-hidden="true">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <span>{option}</span>
+            <span className="option-check" aria-hidden="true">
+              {value === option ? "✓" : "+"}
+            </span>
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+function FlowHeader({ onBack, backLabel = "Back" }) {
+  return (
+    <header className="flow-header">
+      <a className="wordmark" href="#top" aria-label="PhotoWalk AI home">
+        <span className="wordmark-icon" aria-hidden="true">P</span>
+        <span>PHOTO WALK <span className="wordmark-ai">AI</span></span>
+      </a>
+      <button className="flow-back" onClick={onBack} type="button">
+        <span aria-hidden="true">←</span> {backLabel}
+      </button>
+    </header>
+  );
+}
+
+function WalkSetup({ settings, onChange, onBack, onContinue, headingRef }) {
+  const canContinue = Object.values(settings).every(Boolean);
+
+  return (
+    <div className="walk-flow">
+      <FlowHeader onBack={onBack} />
+      <main className="setup-screen" id="main-content">
+        <div className="setup-intro">
+          <SectionLabel>YOUR NEXT LITTLE ADVENTURE</SectionLabel>
+          <h1 ref={headingRef} tabIndex="-1">Plan your walk.</h1>
+          <p>Choose how you want to explore today.</p>
+        </div>
+
+        <div className="setup-options">
+          <OptionGroup
+            className="duration-options"
+            title="01 — Walk duration"
+            options={durationOptions}
+            value={settings.duration}
+            onSelect={(duration) => onChange("duration", duration)}
+          />
+          <OptionGroup
+            className="experience-options"
+            title="02 — Photography experience"
+            options={experienceOptions}
+            value={settings.experience}
+            onSelect={(experience) => onChange("experience", experience)}
+          />
+          <OptionGroup
+            className="direction-options"
+            title="03 — Creative direction"
+            options={creativeDirections}
+            value={settings.creativeDirection}
+            onSelect={(creativeDirection) => onChange("creativeDirection", creativeDirection)}
+          />
+        </div>
+
+        <div className="flow-actions">
+          <button className="text-button" onClick={onBack} type="button">
+            <span aria-hidden="true">←</span> Back
+          </button>
+          <button
+            className="continue-button"
+            disabled={!canContinue}
+            onClick={onContinue}
+            type="button"
+          >
+            Continue <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function MissionPreview({ settings, mission, onBack, headingRef }) {
+  const [startMessage, setStartMessage] = useState("");
+
+  function startWalk() {
+    setStartMessage("Your mission is ready. Put your phone away and enjoy the walk.");
+  }
+
+  return (
+    <div className="walk-flow">
+      <FlowHeader onBack={onBack} />
+      <main className="mission-screen" id="main-content">
+        <div className="mission-content">
+          <SectionLabel>YOUR PHOTOWALK</SectionLabel>
+          <p className="mission-kicker">TODAY’S CREATIVE MISSION</p>
+          <h1 ref={headingRef} tabIndex="-1">{mission.title}</h1>
+          <p className="mission-description">{mission.description}</p>
+
+          <dl className="mission-settings">
+            <div>
+              <dt>Duration</dt>
+              <dd>{settings.duration}</dd>
+            </div>
+            <div>
+              <dt>Level</dt>
+              <dd>{settings.experience}</dd>
+            </div>
+            <div>
+              <dt>Focus</dt>
+              <dd>{settings.creativeDirection}</dd>
+            </div>
+          </dl>
+
+          <div className="mission-actions">
+            <button className="text-button" onClick={onBack} type="button">
+              <span aria-hidden="true">←</span> Back
+            </button>
+            <button className="continue-button start-walk-button" onClick={startWalk} type="button">
+              Start walk <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+          {startMessage && (
+            <p className="walk-start-message" role="status">
+              {startMessage}
+            </p>
+          )}
+        </div>
+        <div className="mission-side-note" aria-hidden="true">
+          <span className="note-dot" />
+          LESS SCREEN. MORE WORLD.
+        </div>
+      </main>
+    </div>
+  );
+}
+
 export default function App() {
+  const [screen, setScreen] = useState("landing");
+  const [settings, setSettings] = useState({
+    duration: "",
+    experience: "",
+    creativeDirection: "",
+  });
+  const [generatedMission, setGeneratedMission] = useState(null);
+  const headingRef = useRef(null);
+
+  useEffect(() => {
+    if (screen !== "landing") {
+      headingRef.current?.focus();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [screen]);
+
+  function updateSetting(key, value) {
+    setSettings((currentSettings) => ({ ...currentSettings, [key]: value }));
+  }
+
+  function showSetup() {
+    setScreen("setup");
+  }
+
+  function showMission() {
+    setGeneratedMission(getMissionForDirection(settings.creativeDirection));
+    setScreen("preview");
+  }
+
   return (
     <>
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <Header />
-      <main id="main-content">
-        <Hero />
-        <HowItWorks />
-        <Philosophy />
-        <ProgressPreview />
-        <FinalCallToAction />
-      </main>
-      <footer className="site-footer">
-        <a className="wordmark" href="#top">
-          <span className="wordmark-icon" aria-hidden="true">
-            P
-          </span>
-          <span>PHOTO WALK <span className="wordmark-ai">AI</span></span>
-        </a>
-        <p>Made for the moments between here and there.</p>
-        <span>© 2026 PHOTO WALK AI</span>
-      </footer>
+      {screen === "landing" ? (
+        <>
+          <Header onStart={showSetup} />
+          <main id="main-content">
+            <Hero onStart={showSetup} />
+            <HowItWorks />
+            <Philosophy />
+            <ProgressPreview />
+            <FinalCallToAction onStart={showSetup} />
+          </main>
+          <footer className="site-footer">
+            <a className="wordmark" href="#top">
+              <span className="wordmark-icon" aria-hidden="true">P</span>
+              <span>PHOTO WALK <span className="wordmark-ai">AI</span></span>
+            </a>
+            <p>Made for the moments between here and there.</p>
+            <span>© 2026 PHOTO WALK AI</span>
+          </footer>
+        </>
+      ) : screen === "setup" ? (
+        <WalkSetup
+          settings={settings}
+          onChange={updateSetting}
+          onBack={() => setScreen("landing")}
+          onContinue={showMission}
+          headingRef={headingRef}
+        />
+      ) : (
+        <MissionPreview
+          settings={settings}
+          mission={generatedMission}
+          onBack={() => setScreen("setup")}
+          headingRef={headingRef}
+        />
+      )}
     </>
   );
 }
