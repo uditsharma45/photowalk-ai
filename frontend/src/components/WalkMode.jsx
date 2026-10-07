@@ -80,7 +80,7 @@ function FinishedWalk({ status, mission, onDone, headingRef }) {
         <p>{mission.description}</p>
       </div>
 
-      <button className="continue-button done-button" onClick={onDone} type="button">
+      <button className="continue-button done-button" onClick={() => onDone(status)} type="button">
         Done <span aria-hidden="true">↗</span>
       </button>
     </main>

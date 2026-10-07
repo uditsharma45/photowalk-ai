@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import PhotoUpload from "./components/PhotoUpload.jsx";
 import WalkMode from "./components/WalkMode.jsx";
+import WalkResults from "./components/WalkResults.jsx";
+import ColorHunt from "./components/ColorHunt.jsx";
 import { getMissionForDirection } from "./services/missionService.js";
 
 const steps = [
@@ -40,7 +43,7 @@ function StartWalkButton({ className = "", onClick }) {
   );
 }
 
-function Header({ onStart }) {
+function Header({ onStart, onColorHunt }) {
   return (
     <header className="site-header">
       <a className="wordmark" href="#top" aria-label="PhotoWalk AI home">
@@ -53,14 +56,19 @@ function Header({ onStart }) {
         <a href="#how-it-works">How it works</a>
         <a href="#why-photowalk">Our philosophy</a>
       </nav>
-      <button className="header-link" onClick={onStart} type="button">
-        Get outside <span aria-hidden="true">↗</span>
-      </button>
+      <div className="header-actions">
+        <button className="header-hunt-link" onClick={onColorHunt} type="button">
+          Color Hunt
+        </button>
+        <button className="header-link" onClick={onStart} type="button">
+          Get outside <span aria-hidden="true">↗</span>
+        </button>
+      </div>
     </header>
   );
 }
 
-function Hero({ onStart }) {
+function Hero({ onStart, onColorHunt }) {
   return (
     <section className="hero" id="top" aria-labelledby="hero-title">
       <div className="hero-copy">
@@ -71,15 +79,30 @@ function Hero({ onStart }) {
           <span>See differently.</span>
         </h1>
         <p className="hero-description">
-          Turn your next walk into a creative photography adventure.
+          Two ways to turn time outside into a creative adventure.
         </p>
-        <div className="hero-action">
-          <StartWalkButton onClick={onStart} />
-          <p className="hero-note">
-            AI-powered photography missions
-            <br />
-            designed to get you outside.
-          </p>
+        <div className="hero-modes" aria-label="Choose an experience">
+          <article className="hero-mode">
+            <p className="hero-mode-label">01 / SOLO EXPERIENCE</p>
+            <h2>Photo Walk</h2>
+            <p>
+              Get a unique photo challenge, go outside, and complete it.
+            </p>
+            <StartWalkButton onClick={onStart} />
+          </article>
+          <article className="hero-mode">
+            <p className="hero-mode-label">02 / TEAM EXPERIENCE</p>
+            <h2>Color Hunt</h2>
+            <p>
+              Compete with your crew. Capture the target color; AI judging is planned for later.
+            </p>
+            <button className="start-button" onClick={onColorHunt} type="button">
+              <span>Start a Color Hunt</span>
+              <span className="button-arrow" aria-hidden="true">
+                ↗
+              </span>
+            </button>
+          </article>
         </div>
         <div className="hero-index" aria-hidden="true">
           <span>01 / 04</span>
@@ -202,6 +225,7 @@ const durationOptions = ["15 minutes", "30 minutes", "60 minutes"];
 const experienceOptions = ["Beginner", "Intermediate", "Advanced"];
 const creativeDirections = [
   "Composition",
+  "Reflections",
   "Light & Shadow",
   "Nature",
   "Street",
@@ -360,9 +384,24 @@ export default function App() {
     creativeDirection: "",
   });
   const [generatedMission, setGeneratedMission] = useState(null);
+  const [missionHistory, setMissionHistory] = useState([]);
+  const [selectedPhotos, setSelectedPhotos] = useState([]);
+  const [photoError, setPhotoError] = useState("");
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [walkStatus, setWalkStatus] = useState("idle");
   const headingRef = useRef(null);
+  const photoUrlsRef = useRef(new Set());
+  const nextPhotoIdRef = useRef(0);
+  const walkSessionRef = useRef(0);
+  const recordedWalkRef = useRef(0);
+
+  useEffect(
+    () => () => {
+      photoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      photoUrlsRef.current.clear();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (screen === "landing") {
@@ -389,6 +428,18 @@ export default function App() {
     }
   }, [screen, walkStatus, remainingSeconds]);
 
+  useEffect(() => {
+    if (
+      screen === "walk" &&
+      walkStatus === "completed" &&
+      generatedMission &&
+      recordedWalkRef.current !== walkSessionRef.current
+    ) {
+      recordedWalkRef.current = walkSessionRef.current;
+      setMissionHistory((history) => [...history, generatedMission]);
+    }
+  }, [screen, walkStatus, generatedMission]);
+
   function updateSetting(key, value) {
     setSettings((currentSettings) => ({ ...currentSettings, [key]: value }));
   }
@@ -397,27 +448,110 @@ export default function App() {
     setScreen("setup");
   }
 
+  function showColorHunt() {
+    setScreen("color-hunt");
+  }
+
   function showMission() {
-    setGeneratedMission(getMissionForDirection(settings.creativeDirection));
+    setGeneratedMission(
+      getMissionForDirection(settings.creativeDirection, {
+        experience: settings.experience,
+        duration: settings.duration,
+        history: missionHistory,
+      }),
+    );
     setScreen("preview");
   }
 
   function startWalk() {
+    walkSessionRef.current += 1;
     setRemainingSeconds(Number.parseInt(settings.duration, 10) * 60);
     setWalkStatus("active");
     setScreen("walk");
   }
 
-  function finishWalk() {
-    setWalkStatus("idle");
+  function clearSession() {
+    photoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    photoUrlsRef.current.clear();
+    setSelectedPhotos([]);
+    setPhotoError("");
     setRemainingSeconds(0);
     setGeneratedMission(null);
+    setWalkStatus("idle");
     setSettings({
       duration: "",
       experience: "",
       creativeDirection: "",
     });
+  }
+
+  function finishWalk(status) {
+    if (status === "completed" || status === "ended") {
+      setScreen("photo-upload");
+      return;
+    }
+
+    clearSession();
     setScreen("landing");
+  }
+
+  function addPhotos(fileList) {
+    const files = Array.from(fileList ?? []);
+    const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    const supportedExtensions = /\.(jpe?g|png|webp)$/i;
+    const acceptedFiles = files.filter((file) => {
+      if (supportedTypes.has(file.type.toLowerCase())) return true;
+      return !file.type && supportedExtensions.test(file.name);
+    });
+    const rejectedCount = files.length - acceptedFiles.length;
+    const newPhotos = [];
+
+    try {
+      for (const file of acceptedFiles) {
+        const url = URL.createObjectURL(file);
+        photoUrlsRef.current.add(url);
+        newPhotos.push({
+          id: `photo-${nextPhotoIdRef.current++}`,
+          name: file.name,
+          file,
+          url,
+        });
+      }
+    } catch (error) {
+      newPhotos.forEach((photo) => {
+        URL.revokeObjectURL(photo.url);
+        photoUrlsRef.current.delete(photo.url);
+      });
+      setPhotoError(`Could not prepare selected photos: ${error.message}`);
+      return;
+    }
+
+    setSelectedPhotos((photos) => [...photos, ...newPhotos]);
+    setPhotoError(
+      rejectedCount
+        ? `${rejectedCount} unsupported ${rejectedCount === 1 ? "file was" : "files were"} skipped. Choose JPEG, PNG, or WebP images.`
+        : "",
+    );
+  }
+
+  function removePhoto(photoId) {
+    const photoToRemove = selectedPhotos.find((photo) => photo.id === photoId);
+    if (photoToRemove) {
+      URL.revokeObjectURL(photoToRemove.url);
+      photoUrlsRef.current.delete(photoToRemove.url);
+    }
+    setSelectedPhotos((photos) => photos.filter((photo) => photo.id !== photoId));
+    setPhotoError("");
+  }
+
+  function finishPhotoResults() {
+    clearSession();
+    setScreen("landing");
+  }
+
+  function showWalkResults() {
+    if (selectedPhotos.length === 0) return;
+    setScreen("walk-results");
   }
 
   return (
@@ -427,9 +561,9 @@ export default function App() {
       </a>
       {screen === "landing" ? (
         <>
-          <Header onStart={showSetup} />
+          <Header onStart={showSetup} onColorHunt={showColorHunt} />
           <main id="main-content">
-            <Hero onStart={showSetup} />
+            <Hero onStart={showSetup} onColorHunt={showColorHunt} />
             <HowItWorks />
             <Philosophy />
             <ProgressPreview />
@@ -460,7 +594,7 @@ export default function App() {
           onStart={startWalk}
           headingRef={headingRef}
         />
-      ) : (
+      ) : screen === "walk" ? (
         <WalkMode
           mission={generatedMission}
           remainingSeconds={remainingSeconds}
@@ -471,6 +605,27 @@ export default function App() {
           onDone={finishWalk}
           headingRef={headingRef}
         />
+      ) : screen === "photo-upload" ? (
+        <PhotoUpload
+          photos={selectedPhotos}
+          error={photoError}
+          onAddFiles={addPhotos}
+          onRemovePhoto={removePhoto}
+          onBack={() => setScreen("walk")}
+          onContinue={showWalkResults}
+          headingRef={headingRef}
+        />
+      ) : screen === "walk-results" ? (
+        <WalkResults
+          mission={generatedMission}
+          duration={settings.duration}
+          photoCount={selectedPhotos.length}
+          onBack={() => setScreen("photo-upload")}
+          onDone={finishPhotoResults}
+          headingRef={headingRef}
+        />
+      ) : (
+        <ColorHunt onExit={() => setScreen("landing")} />
       )}
     </>
   );
