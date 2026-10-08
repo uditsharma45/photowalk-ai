@@ -26,6 +26,11 @@ class SubmissionRead(BaseModel):
     team_id: str
     participant_id: str
     image_reference: str
+    image_path: str | None = None
+    image_url: str | None = None
+    mime_type: str | None = None
+    file_size: int | None = None
+    uploaded_at: datetime | None = None
     submitted_at: datetime
     status: Literal["submitted"]
 

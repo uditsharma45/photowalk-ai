@@ -28,6 +28,7 @@ npm-debug.log*
 
 # Uploaded or generated media
 uploads/
+/backend/uploads/
 generated/
 *.jpg
 *.jpeg

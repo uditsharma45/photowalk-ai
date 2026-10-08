@@ -1468,6 +1468,13 @@ a:focus-visible {
   line-height: 1.6;
 }
 
+.photo-upload-success {
+  margin: 1rem 0 0;
+  color: var(--color-accent);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
 .photo-upload-actions,
 .results-actions {
   display: flex;

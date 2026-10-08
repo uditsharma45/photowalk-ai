@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import { uploadPhoto, resolveApiUrl } from "../services/api.js";
 
 const imageAccept = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
 
@@ -6,14 +7,16 @@ function SectionLabel({ children }) {
   return <p className="section-label">{children}</p>;
 }
 
-function AddPhotosControl({ inputRef, onFilesSelected }) {
+function AddPhotosControl({ disabled, inputRef, onFilesSelected }) {
   return (
     <div className="photo-add-control">
       <input
         accept={imageAccept}
         className="visually-hidden"
+        capture="environment"
         id="walk-photos"
         multiple
+        disabled={disabled}
         onChange={onFilesSelected}
         ref={inputRef}
         type="file"
@@ -34,13 +37,43 @@ export default function PhotoUpload({
   onRemovePhoto,
   onBack,
   onContinue,
+  onPhotoUploaded,
   headingRef,
 }) {
   const inputRef = useRef(null);
+  const isUploadingRef = useRef(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   function handleFileSelection(event) {
     onAddFiles(event.target.files);
     event.target.value = "";
+  }
+
+  async function handleContinue() {
+    if (isUploadingRef.current || photos.length === 0) return;
+    isUploadingRef.current = true;
+    setIsUploading(true);
+    setUploadError("");
+    try {
+      for (const photo of photos) {
+        if (photo.uploaded) continue;
+        if (!photo.file) {
+          throw new Error("A selected photo is no longer available. Please select it again.");
+        }
+        const asset = await uploadPhoto(photo.file);
+        onPhotoUploaded(photo.id, {
+          ...asset,
+          url: resolveApiUrl(asset.image_url),
+        });
+      }
+      if (photos.every((photo) => photo.uploaded)) onContinue();
+    } catch (error) {
+      setUploadError(error.message || "Photo upload failed. Please try again.");
+    } finally {
+      isUploadingRef.current = false;
+      setIsUploading(false);
+    }
   }
 
   return (
@@ -67,7 +100,7 @@ export default function PhotoUpload({
             <span className="empty-photo-mark" aria-hidden="true">✳</span>
             <h2 id="empty-photos-title">NO PHOTOS YET</h2>
             <p>Add the photographs you captured during your walk.</p>
-            <AddPhotosControl inputRef={inputRef} onFilesSelected={handleFileSelection} />
+            <AddPhotosControl disabled={isUploading} inputRef={inputRef} onFilesSelected={handleFileSelection} />
           </section>
         ) : (
           <section className="photo-selection" aria-label="Selected walk photos">
@@ -79,11 +112,14 @@ export default function PhotoUpload({
             <div className="photo-grid">
               {photos.map((photo, index) => (
                 <figure className="photo-thumbnail" key={photo.id}>
-                  <img src={photo.url} alt={`Selected walk photo ${index + 1}: ${photo.name}`} />
-                  <figcaption className="visually-hidden">{photo.name}</figcaption>
+                  <img src={photo.url} alt={`${photo.uploaded ? "Uploaded" : "Selected"} walk photo ${index + 1}: ${photo.name}`} />
+                  <figcaption className="visually-hidden">
+                    {photo.uploaded ? `${photo.name}, uploaded` : photo.name}
+                  </figcaption>
                   <button
                     aria-label={`Remove photo ${index + 1}: ${photo.name}`}
                     className="photo-remove-button"
+                    disabled={isUploading || photo.uploaded}
                     onClick={() => onRemovePhoto(photo.id)}
                     type="button"
                   >
@@ -91,28 +127,38 @@ export default function PhotoUpload({
                   </button>
                 </figure>
               ))}
-              <AddPhotosControl inputRef={inputRef} onFilesSelected={handleFileSelection} />
+              <AddPhotosControl disabled={isUploading} inputRef={inputRef} onFilesSelected={handleFileSelection} />
             </div>
           </section>
         )}
 
-        {error && (
+        {(error || uploadError) && (
           <p className="photo-upload-error" role="alert">
-            {error}
+            {uploadError || error}
           </p>
+        )}
+        {photos.some((photo) => photo.uploaded) && (
+          <p className="photo-upload-success" role="status">Uploaded to PhotoWalk AI.</p>
         )}
 
         <div className="photo-upload-actions">
-          <button className="text-button" onClick={onBack} type="button">
+          <button className="text-button" disabled={isUploading} onClick={onBack} type="button">
             <span aria-hidden="true">←</span> Back
           </button>
           <button
             className="continue-button"
-            disabled={photos.length === 0}
-            onClick={onContinue}
+            disabled={photos.length === 0 || isUploading}
+            onClick={handleContinue}
             type="button"
           >
-            Continue <span aria-hidden="true">↗</span>
+            {isUploading
+              ? "Uploading photos..."
+              : uploadError
+                ? "Retry upload"
+                : photos.every((photo) => photo.uploaded)
+                  ? "Continue to results"
+                  : "Continue"}
+            <span aria-hidden="true">↗</span>
           </button>
         </div>
       </main>

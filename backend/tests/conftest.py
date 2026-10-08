@@ -1,4 +1,5 @@
 import pytest
+from starlette.routing import Mount
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -9,8 +10,13 @@ from app.main import app
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     database_path = (tmp_path / "photowalk-test.db").as_posix()
+    upload_directory = tmp_path / "uploads"
+    monkeypatch.setenv("UPLOAD_DIR", str(upload_directory))
+    upload_mount = next(route for route in app.routes if isinstance(route, Mount) and route.path == "/uploads")
+    upload_mount.app.directory = str(upload_directory)
+    upload_mount.app.all_directories = [str(upload_directory)]
     test_engine = create_engine(f"sqlite:///{database_path}", connect_args={"check_same_thread": False})
     TestingSessionLocal = sessionmaker(bind=test_engine, autoflush=False, expire_on_commit=False)
     Base.metadata.create_all(bind=test_engine)

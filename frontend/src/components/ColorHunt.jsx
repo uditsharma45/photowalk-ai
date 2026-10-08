@@ -1,14 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  assignTeamColors,
   createFinalCompetitionResults,
   createHunt,
-  createLiveStandings,
   createPhotoSubmission,
   createTeamDraft,
+  completeCompetition,
   getDefaultRewards,
-  joinHunt,
+  joinHuntByCode,
+  loadHunt,
+  loadHuntByCode,
+  loadLeaderboard,
+  startCompetition as startCompetitionRequest,
+  storeParticipantSession,
+  uploadExistingParticipantPhoto,
+  uploadParticipantPhoto,
 } from "../services/colorHuntService.js";
+import { checkApiHealth, resolveApiUrl } from "../services/api.js";
 import { createParticipantCertificates } from "../services/certificateService.js";
 import CertificateView from "./CertificateView.jsx";
 
@@ -16,6 +23,12 @@ function localDateString() {
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 10);
+}
+
+function parseServerTimestamp(value) {
+  if (typeof value !== "string") return Number.NaN;
+  const timestamp = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`;
+  return new Date(timestamp).getTime();
 }
 
 function SectionLabel({ children }) {
@@ -36,7 +49,7 @@ function FlowHeader({ onBack, backLabel = "Back" }) {
   );
 }
 
-function ColorHuntHome({ onCreate, onJoin, onBack }) {
+function ColorHuntHome({ onCreate, onJoin, onBack, backendAvailable }) {
   return (
     <div className="walk-flow">
       <FlowHeader onBack={onBack} backLabel="Photo Walk" />
@@ -56,7 +69,9 @@ function ColorHuntHome({ onCreate, onJoin, onBack }) {
           </button>
         </div>
         <p className="hunt-local-note">
-          Prototype data lives in this browser session. Real shared events require a backend.
+          {backendAvailable === false
+            ? "Backend unavailable. Start the FastAPI server to use multiplayer features."
+            : "Hunts, teams, participants and submissions are stored by the Hunt server."}
         </p>
       </main>
     </div>
@@ -117,6 +132,7 @@ function CreateHunt({
   onCreate,
   onBack,
   error,
+  pending,
 }) {
   function updateTeam(teamId, update) {
     setTeams((current) => current.map((team) => team.id === teamId ? update(team) : team));
@@ -367,8 +383,8 @@ function CreateHunt({
           </section>
 
           {error && <p className="hunt-error" role="alert">{error}</p>}
-          <button className="continue-button" type="submit">
-            Create shared Hunt <span aria-hidden="true">↗</span>
+          <button className="continue-button" disabled={pending} type="submit">
+            {pending ? "Creating Hunt..." : "Create shared Hunt"} <span aria-hidden="true">↗</span>
           </button>
         </form>
       </main>
@@ -376,37 +392,70 @@ function CreateHunt({
   );
 }
 
-function JoinHunt({ hunt, code, setCode, person, setPerson, teamId, setTeamId, error, onJoin, onBack }) {
+function JoinHunt({
+  hunt,
+  code,
+  setCode,
+  person,
+  setPerson,
+  teamId,
+  setTeamId,
+  error,
+  pending,
+  onJoin,
+  onBack,
+}) {
+  const matchingHunt = hunt?.code === code.trim().toUpperCase() ? hunt : null;
   return (
     <div className="walk-flow">
       <FlowHeader onBack={onBack} />
       <main className="hunt-form-page hunt-page" id="main-content">
         <SectionLabel>JOIN THE SHARED COMPETITION</SectionLabel>
-        <p className="hunt-kicker">{hunt?.location ?? "COLOR HUNT"}</p>
-        <h1>{hunt?.name ?? "Join a Color Hunt."}</h1>
+        <p className="hunt-kicker">{matchingHunt?.location ?? "COLOR HUNT"}</p>
+        <h1>{matchingHunt?.name ?? "Join a Color Hunt."}</h1>
         <p className="hunt-intro">Join one of the teams competing in this event.</p>
         <form className="hunt-form" onSubmit={(event) => { event.preventDefault(); onJoin(); }}>
           <label>
             Hunt code
-            <input autoCapitalize="characters" maxLength={5} onChange={(event) => setCode(event.target.value.toUpperCase())} required value={code} />
+            <input autoCapitalize="characters" maxLength={6} onChange={(event) => setCode(event.target.value.toUpperCase())} required value={code} />
           </label>
-          <ParticipantFields
-            label="Participant"
-            onChange={(key, value) => setPerson((current) => ({ ...current, [key]: value }))}
-            person={person}
-          />
-          <label>
-            Choose your team
-            <select onChange={(event) => setTeamId(event.target.value)} required value={teamId}>
-              <option value="">Select a team</option>
-              {hunt?.teams.map((team) => (
-                <option key={team.id} value={team.id}>{team.name} · {team.participantIds.length} players</option>
-              ))}
-            </select>
-          </label>
+          {matchingHunt && (
+            <>
+              <div className="hunt-details" aria-label="Hunt details">
+                <div><dt>Location</dt><dd>{matchingHunt.location}</dd></div>
+                <div><dt>Duration</dt><dd>{matchingHunt.duration} minutes</dd></div>
+                <div><dt>Status</dt><dd>{matchingHunt.status}</dd></div>
+              </div>
+              <ul className="shared-hunt-teams">
+                {matchingHunt.teams.map((team) => (
+                  <li key={team.id}>
+                    <strong>{team.name}</strong>
+                    <span className="hunt-team-color">
+                      <i aria-hidden="true" style={{ "--target-color": team.targetHex }} />
+                      {team.targetColor}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <ParticipantFields
+                label="Participant"
+                onChange={(key, value) => setPerson((current) => ({ ...current, [key]: value }))}
+                person={person}
+              />
+              <label>
+                Choose your team
+                <select onChange={(event) => setTeamId(event.target.value)} required value={teamId}>
+                  <option value="">Select a team</option>
+                  {matchingHunt.teams.map((team) => (
+                    <option key={team.id} value={team.id}>{team.name} · {team.participantIds.length} players</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
           {error && <p className="hunt-error" role="alert">{error}</p>}
-          <button className="continue-button" type="submit">
-            Join this Hunt <span aria-hidden="true">↗</span>
+          <button className="continue-button" disabled={pending} type="submit">
+            {pending ? (matchingHunt ? "Joining Hunt..." : "Loading Hunt...") : (matchingHunt ? "Join this Hunt" : "Find Hunt")} <span aria-hidden="true">↗</span>
           </button>
         </form>
       </main>
@@ -431,8 +480,19 @@ function Rewards({ rewards }) {
   );
 }
 
-function HuntLobby({ hunt, onJoin, onStart, onBack, participantId }) {
+function HuntLobby({
+  hunt,
+  onJoin,
+  onStart,
+  onBack,
+  onRefresh,
+  participantId,
+  error,
+  refreshPending,
+  startPending,
+}) {
   const participants = hunt.participants.filter((participant) => participant.teamId);
+  const activeParticipant = participants.find((participant) => participant.id === participantId);
   return (
     <div className="walk-flow">
       <FlowHeader onBack={onBack} />
@@ -440,7 +500,7 @@ function HuntLobby({ hunt, onJoin, onStart, onBack, participantId }) {
         <SectionLabel>THE COMPETITION IS GATHERING</SectionLabel>
         <p className="hunt-kicker">{hunt.location.toUpperCase()}</p>
         <h1>{hunt.name}</h1>
-        <p className="hunt-intro">One shared event. Every team will receive a distinct target color when the Hunt starts.</p>
+        <p className="hunt-intro">One shared event. Team colors, participants and status are synced with the Hunt server.</p>
         <dl className="hunt-details">
           <div><dt>Teams</dt><dd>{hunt.teams.length}</dd></div>
           <div><dt>Players</dt><dd>{participants.length}</dd></div>
@@ -448,6 +508,7 @@ function HuntLobby({ hunt, onJoin, onStart, onBack, participantId }) {
           <div><dt>Date</dt><dd>{new Date(`${hunt.date}T12:00:00`).toLocaleDateString()}</dd></div>
           <div><dt>Location</dt><dd>{hunt.location}</dd></div>
           <div><dt>Hunt code</dt><dd className="hunt-code">{hunt.code}</dd></div>
+          <div><dt>Status</dt><dd>{hunt.status}</dd></div>
         </dl>
         <section className="shared-hunt-teams" aria-labelledby="shared-teams-title">
           <div className="hunt-team-heading">
@@ -488,16 +549,24 @@ function HuntLobby({ hunt, onJoin, onStart, onBack, participantId }) {
         </section>
         <Rewards rewards={hunt.rewards} />
         <p className="hunt-local-note">
-          {participantId
-            ? `You are registered in ${hunt.teams.find((team) => team.id === hunt.participants.find((person) => person.id === participantId)?.teamId)?.name ?? "this Hunt"}.`
-            : "The organizer is ready to start. Participants can join with the Hunt code in this browser."}
-          {" "}Cross-device participation requires a backend.
+          {activeParticipant
+            ? `You are registered in ${hunt.teams.find((team) => team.id === activeParticipant.teamId)?.name ?? "this Hunt"}.`
+            : "Select Join as participant to register for this Hunt."}
         </p>
+        {error && <p className="hunt-error" role="alert">{error}</p>}
         <div className="hunt-lobby-actions">
-          <button className="text-button" onClick={onJoin} type="button">Join as participant →</button>
-          <button className="continue-button" onClick={onStart} type="button">
-            Start Hunt <span aria-hidden="true">↗</span>
+          {hunt.status === "lobby" && (
+            <button className="text-button" onClick={onJoin} type="button">Join as participant →</button>
+          )}
+          <button className="text-button" disabled={refreshPending || startPending} onClick={onRefresh} type="button">
+            {refreshPending ? "Refreshing Hunt..." : "Refresh Hunt"}
           </button>
+          {hunt.status === "lobby" && activeParticipant?.role === "Organizer" && (
+            <button className="continue-button" disabled={refreshPending || startPending} onClick={onStart} type="button">
+              {startPending ? "Starting Hunt..." : "Start Hunt"} <span aria-hidden="true">↗</span>
+            </button>
+          )}
+          {hunt.status === "active" && <p className="hunt-local-note">This Hunt is already in progress.</p>}
         </div>
       </main>
     </div>
@@ -523,7 +592,7 @@ function TeamStandings({ standings, live = false }) {
               <span>{team.targetColor} · {team.submissionCount} / {team.participantCount} submissions</span>
               <span className="standing-progress"><i style={{ width: `${Math.round(team.progress * 100)}%` }} /></span>
             </div>
-            <strong className="standing-score">{team.score.toFixed(1)}</strong>
+            <strong className="standing-score">{team.scorePending ? "PENDING" : team.score.toFixed(1)}</strong>
           </li>
         ))}
       </ol>
@@ -580,6 +649,8 @@ function HuntSubmissions({
   onFinalize,
   onReturnToHunt,
   error,
+  pending,
+  canReturnToHunt,
 }) {
   const inputRef = useRef(null);
   const participant = hunt.participants.find((entry) => entry.id === activeParticipantId) ?? hunt.participants.find((entry) => entry.teamId);
@@ -595,7 +666,7 @@ function HuntSubmissions({
 
   return (
     <div className="walk-flow">
-      <FlowHeader onBack={onReturnToHunt} backLabel={hunt.status === "active" ? "Return to Hunt" : "Hunt closed"} />
+      <FlowHeader onBack={onReturnToHunt} backLabel={canReturnToHunt ? "Return to Hunt" : "Hunt closed"} />
       <main className="hunt-submit-page hunt-page" id="main-content">
         <SectionLabel>INDIVIDUAL PARTICIPANT SUBMISSIONS</SectionLabel>
         <p className="hunt-kicker">{hunt.name.toUpperCase()} · {hunt.location.toUpperCase()}</p>
@@ -603,7 +674,7 @@ function HuntSubmissions({
         <p className="hunt-intro">Each participant submits independently for their team's assigned color.</p>
         <label className="active-participant-picker submission-participant-picker">
           PARTICIPANT
-          <select onChange={(event) => setActiveParticipantId(event.target.value)} value={participant?.id ?? ""}>
+          <select disabled={pending} onChange={(event) => setActiveParticipantId(event.target.value)} value={participant?.id ?? ""}>
             {hunt.participants.filter((person) => person.teamId).map((person) => (
               <option disabled={person.submitted} key={person.id} value={person.id}>
                 {person.name} · {hunt.teams.find((entry) => entry.id === person.teamId)?.name}{person.submitted ? " · SUBMITTED" : ""}
@@ -622,8 +693,15 @@ function HuntSubmissions({
           <div className="hunt-photo-grid">
             {submissions.map((submission) => (
               <figure className="hunt-photo-thumb" key={submission.id}>
-                <img src={submission.photo.url} alt={`Submission by ${participant.name} for ${team.targetColor}`} />
-                <button aria-label={`Remove ${submission.photo.name}`} className="photo-remove-button" onClick={() => onRemovePhoto(participant.id, submission.id)} type="button">×</button>
+                {submission.photo.url
+                  ? <img src={submission.photo.url} alt={`Submission by ${participant.name} for ${team.targetColor}`} />
+                  : <figcaption>{submission.photo.name}</figcaption>}
+                {!submission.uploaded && (
+                  <button aria-label={`Remove ${submission.photo.name}`} className="photo-remove-button" onClick={() => onRemovePhoto(participant.id, submission.id)} type="button">×</button>
+                )}
+                {submission.uploaded && (
+                  <figcaption className="visually-hidden">Uploaded successfully</figcaption>
+                )}
               </figure>
             ))}
             {submissions.length < 3 && !participant.submitted && (
@@ -631,8 +709,10 @@ function HuntSubmissions({
                 <input
                   accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                   className="visually-hidden"
+                  capture="environment"
                   id="hunt-photos"
                   multiple
+                  disabled={pending}
                   onChange={handleFiles}
                   ref={inputRef}
                   type="file"
@@ -645,19 +725,17 @@ function HuntSubmissions({
             )}
           </div>
           {error && <p className="hunt-error" role="alert">{error}</p>}
-          <button className="continue-button submit-player-button" disabled={!submissions.length || participant.submitted} onClick={() => onSubmit(participant.id)} type="button">
-            {participant.submitted ? "Submission complete" : "Submit my photos"} <span aria-hidden="true">↗</span>
+          <button className="continue-button submit-player-button" disabled={!submissions.length || participant.submitted || pending} onClick={() => onSubmit(participant.id)} type="button">
+            {pending ? "Submitting..." : participant.submitted ? "Submission complete" : "Submit my photos"} <span aria-hidden="true">↗</span>
           </button>
         </section>
         <div className="submission-progress">
           {submittedCount} / {hunt.participants.filter((entry) => entry.teamId).length} participants submitted.
           {!allSubmitted && <span> Finalize once submissions are closed.</span>}
         </div>
-        {hunt.status !== "active" && (
-          <button className="text-button finalize-hunt-button" onClick={onFinalize} type="button">
-          {allSubmitted ? "Finalize all results" : "Close submissions & finalize results"} <span aria-hidden="true">→</span>
-          </button>
-        )}
+        <button className="text-button finalize-hunt-button" disabled={pending} onClick={onFinalize} type="button">
+          {pending ? "Loading leaderboard..." : allSubmitted ? "Finalize all results" : "Close submissions & finalize results"} <span aria-hidden="true">→</span>
+        </button>
       </main>
     </div>
   );
@@ -681,7 +759,9 @@ function HuntResults({ hunt, results, onDone, onViewCertificate }) {
           <section className="hunt-winner" aria-labelledby="winner-title">
             <p className="hunt-field-label">🏆 WINNING TEAM</p>
             <h2 id="winner-title">{winner.name.toUpperCase()}</h2>
-            <p className="winner-score">{winner.totalScore.toFixed(1)} <span>/ 100 average</span></p>
+            <p className="winner-score">
+              {winner.scorePending ? "SCORING PENDING" : `${winner.totalScore.toFixed(1)} / 100 average`}
+            </p>
             <p className="winner-reason">{results.winnerExplanation}</p>
           </section>
         )}
@@ -692,7 +772,7 @@ function HuntResults({ hunt, results, onDone, onViewCertificate }) {
             <details className="final-team-result" key={team.id}>
               <summary>
                 <span>{team.rank <= 3 ? ["🥇", "🥈", "🥉"][team.rank - 1] : `${team.rank}.`} {team.name}</span>
-                <span>{team.totalScore.toFixed(1)} · {team.targetColor}</span>
+                <span>{team.scorePending ? "PENDING" : team.totalScore.toFixed(1)} · {team.targetColor}</span>
               </summary>
               <div className="final-team-members">
                 {team.individualStandings.map((participant) => (
@@ -706,7 +786,7 @@ function HuntResults({ hunt, results, onDone, onViewCertificate }) {
                     )}
                   </div>
                 ))}
-                <p className="final-team-average">TEAM SCORE · {team.totalScore.toFixed(1)}</p>
+                <p className="final-team-average">TEAM SCORE · {team.scorePending ? "PENDING" : team.totalScore.toFixed(1)}</p>
                 {photoUrl(team.strongestPhoto) && (
                   <figure className="team-strongest-photo">
                     <img alt={`Strongest photograph from ${team.name}`} src={photoUrl(team.strongestPhoto)} />
@@ -717,7 +797,7 @@ function HuntResults({ hunt, results, onDone, onViewCertificate }) {
             </details>
           ))}
         </section>
-        <p className="hunt-local-note">Scores and winner explanation are deterministic prototype fixtures, not AI analysis.</p>
+        <p className="hunt-local-note">Submission counts and rankings come from the server. Scores remain pending until AI analysis is added.</p>
         <section aria-labelledby="participant-certificates-title" className="participant-certificates">
           <p className="hunt-field-label">YOUR CERTIFICATE</p>
           <h2 id="participant-certificates-title">A record of your contribution.</h2>
@@ -745,8 +825,11 @@ function HuntResults({ hunt, results, onDone, onViewCertificate }) {
 export default function ColorHunt({ onExit }) {
   const [screen, setScreen] = useState("home");
   const [hunt, setHunt] = useState(null);
+  const huntRef = useRef(hunt);
+  huntRef.current = hunt;
   const [results, setResults] = useState(null);
   const [selectedCertificate, setSelectedCertificate] = useState(null);
+  const [liveStandings, setLiveStandings] = useState([]);
   const [teams, setTeams] = useState(() => [createTeamDraft(0), createTeamDraft(1)]);
   const [organizer, setOrganizer] = useState({ name: "", email: "", teamId: "" });
   const [huntName, setHuntName] = useState("");
@@ -764,9 +847,13 @@ export default function ColorHunt({ onExit }) {
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [activeParticipantId, setActiveParticipantId] = useState("");
   const [uploadError, setUploadError] = useState("");
+  const [pending, setPending] = useState("");
+  const [backendAvailable, setBackendAvailable] = useState(null);
+  const [joinReturnScreen, setJoinReturnScreen] = useState("home");
   const objectUrlsRef = useRef(new Set());
   const submissionSequenceRef = useRef(0);
-  const liveStandings = useMemo(() => hunt ? createLiveStandings(hunt) : [], [hunt]);
+  const timerEndedRef = useRef(false);
+  const actionInFlightRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -777,23 +864,70 @@ export default function ColorHunt({ onExit }) {
   );
 
   useEffect(() => {
-    if (screen !== "hunting") return undefined;
-    const intervalId = window.setInterval(() => {
-      setRemainingSeconds((seconds) => Math.max(0, seconds - 1));
-    }, 1000);
-    return () => window.clearInterval(intervalId);
+    if (screen !== "home") return undefined;
+    let cancelled = false;
+    checkApiHealth()
+      .then(() => { if (!cancelled) setBackendAvailable(true); })
+      .catch(() => { if (!cancelled) setBackendAvailable(false); });
+    return () => { cancelled = true; };
   }, [screen]);
 
   useEffect(() => {
-    if (screen === "hunting" && remainingSeconds === 0) closeHunt();
-  }, [screen, remainingSeconds]);
+    if (!hunt?.id || !["lobby", "hunting", "submissions"].includes(screen)) return undefined;
+    let cancelled = false;
+    const synchronize = async () => {
+      try {
+        const previous = huntRef.current;
+        const [updatedHunt, standings] = await Promise.all([
+          loadHunt(hunt.id, previous),
+          loadLeaderboard(previous),
+        ]);
+        if (cancelled) return;
+        setHunt(updatedHunt);
+        setLiveStandings(standings);
+        if (updatedHunt.status === "active" && screen === "lobby" && updatedHunt.activeParticipantId) {
+          setActiveParticipantId(updatedHunt.activeParticipantId);
+          setScreen("hunting");
+        } else if (updatedHunt.status === "completed" && screen === "hunting") {
+          setScreen("submissions");
+        }
+      } catch (error) {
+        if (!cancelled) setJoinError(error.message);
+      }
+    };
+    const intervalId = window.setInterval(synchronize, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [hunt?.id, screen]);
+
+  useEffect(() => {
+    if (screen !== "hunting" || !hunt?.startedAt) return undefined;
+    const updateRemainingTime = () => {
+      const startedAt = parseServerTimestamp(hunt.startedAt);
+      const endTime = startedAt + hunt.duration * 60_000;
+      const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+      setRemainingSeconds(remaining);
+      if (remaining === 0 && !timerEndedRef.current) {
+        timerEndedRef.current = true;
+        setScreen("submissions");
+      }
+    };
+    updateRemainingTime();
+    const intervalId = window.setInterval(updateRemainingTime, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [hunt?.duration, hunt?.startedAt, screen]);
 
   function closeHunt() {
-    setHunt((current) => current ? { ...current, status: "submissions", completedAt: new Date().toISOString() } : current);
     setScreen("submissions");
   }
 
-  function createNewHunt() {
+  async function createNewHunt() {
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
+    setPending("create");
+    setJoinError("");
     try {
       const rewardList = rewards.slice(0, rewardPlaces);
       const created = createHunt({
@@ -805,33 +939,103 @@ export default function ColorHunt({ onExit }) {
         teams,
         rewards: rewardList,
       });
-      setHunt(created);
-      setActiveParticipantId(created.participants.find((participant) => participant.teamId)?.id ?? "");
-      setJoinCode(created.code);
-      setJoinError("");
+      const persisted = await created;
+      const standings = await loadLeaderboard(persisted);
+      setHunt(persisted);
+      setLiveStandings(standings);
+      setActiveParticipantId(persisted.activeParticipantId);
+      setJoinCode(persisted.code);
+      timerEndedRef.current = false;
       setScreen("lobby");
     } catch (error) {
       setJoinError(error.message);
+    } finally {
+      actionInFlightRef.current = false;
+      setPending("");
     }
   }
 
-  function joinExistingHunt() {
+  async function joinExistingHunt() {
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
+    setPending("join");
+    setJoinError("");
     try {
-      const joined = joinHunt(hunt, joinCode, { ...joinPerson, teamId: joinTeamId });
+      const huntMatchesCode = hunt?.code === joinCode.trim().toUpperCase();
+      if (!huntMatchesCode) {
+        const found = await loadHuntByCode(joinCode);
+        const standings = await loadLeaderboard(found);
+        setHunt(found);
+        setLiveStandings(standings);
+        setJoinTeamId("");
+        if (found.status !== "lobby" && !found.activeParticipantId) {
+          throw new Error("This Hunt has already started and is not accepting new participants.");
+        }
+        if (found.activeParticipantId) {
+          setActiveParticipantId(found.activeParticipantId);
+          setScreen(found.status === "active" ? "hunting" : found.status === "completed" ? "submissions" : "lobby");
+        }
+        return;
+      }
+      const joined = await joinHuntByCode(joinCode, { ...joinPerson, teamId: joinTeamId });
+      const standings = await loadLeaderboard(joined.hunt);
       setHunt(joined.hunt);
+      setLiveStandings(standings);
       setActiveParticipantId(joined.participant.id);
-      setJoinError("");
-      setScreen("lobby");
+      setScreen(joined.hunt.status === "active" ? "hunting" : "lobby");
     } catch (error) {
       setJoinError(error.message);
+    } finally {
+      actionInFlightRef.current = false;
+      setPending("");
     }
   }
 
-  function startCompetition() {
-    const assignedHunt = assignTeamColors(hunt);
-    setHunt(assignedHunt);
-    setRemainingSeconds(assignedHunt.duration * 60);
-    setScreen("hunting");
+  async function startCompetition() {
+    if (actionInFlightRef.current || !hunt) return;
+    actionInFlightRef.current = true;
+    setPending("start");
+    setJoinError("");
+    try {
+      const started = await startCompetitionRequest(hunt);
+      const standings = await loadLeaderboard(started);
+      setHunt(started);
+      setLiveStandings(standings);
+      setActiveParticipantId(started.activeParticipantId || activeParticipantId);
+      timerEndedRef.current = false;
+      setScreen("hunting");
+    } catch (error) {
+      setJoinError(error.message);
+    } finally {
+      actionInFlightRef.current = false;
+      setPending("");
+    }
+  }
+
+  async function refreshHunt() {
+    if (!hunt || actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
+    setPending("refresh");
+    setJoinError("");
+    try {
+      const [updated, standings] = await Promise.all([
+        loadHunt(hunt.id, huntRef.current),
+        loadLeaderboard(huntRef.current),
+      ]);
+      setHunt(updated);
+      setLiveStandings(standings);
+      if (updated.status === "active" && updated.activeParticipantId) {
+        setActiveParticipantId(updated.activeParticipantId);
+        setScreen("hunting");
+      } else if (updated.status === "completed") {
+        setScreen("submissions");
+      }
+    } catch (error) {
+      setJoinError(error.message);
+    } finally {
+      actionInFlightRef.current = false;
+      setPending("");
+    }
   }
 
   function addSubmissionPhotos(participantId, fileList) {
@@ -895,40 +1099,119 @@ export default function ColorHunt({ onExit }) {
     }));
   }
 
-  function submitParticipant(participantId) {
-    const participant = hunt.participants.find((entry) => entry.id === participantId);
+  async function submitParticipant(participantId) {
+    if (actionInFlightRef.current) return;
+    let currentHunt = huntRef.current;
+    const participant = currentHunt?.participants.find((entry) => entry.id === participantId);
     if (!participant?.photos.length) {
       setUploadError("Add at least one photo before submitting.");
       return;
     }
-    const updated = {
-      ...hunt,
-      participants: hunt.participants.map((entry) =>
-        entry.id === participantId ? { ...entry, submitted: true, submittedAt: new Date().toISOString() } : entry,
-      ),
-    };
-    setHunt(updated);
+    if (participant.submitted) return;
+    actionInFlightRef.current = true;
+    setPending("submission");
     setUploadError("");
-    const competitors = updated.participants.filter((entry) => entry.teamId);
-    if (updated.status === "active") {
-      setScreen("hunting");
-    } else if (competitors.every((entry) => entry.submitted)) {
-      finalizeResults(updated);
+    try {
+      const pendingPhotos = participant.photos.filter((photo) => !photo.uploaded);
+      for (const photo of pendingPhotos) {
+        if (!photo.photo.file) {
+          throw new Error("This photo is no longer available on this device. Select it again before retrying.");
+        }
+        const submission = photo.backendSubmissionId
+          ? await uploadExistingParticipantPhoto(photo.backendSubmissionId, photo)
+          : await uploadParticipantPhoto(currentHunt, participant, photo);
+        if (photo.photo.url?.startsWith("blob:")) {
+          URL.revokeObjectURL(photo.photo.url);
+          objectUrlsRef.current.delete(photo.photo.url);
+        }
+        const uploadedUrl = resolveApiUrl(submission.image_url);
+        currentHunt = {
+          ...currentHunt,
+          participants: currentHunt.participants.map((entry) => entry.id === participantId
+            ? {
+                ...entry,
+                photos: entry.photos.map((entryPhoto) => entryPhoto.id === photo.id
+                  ? {
+                      ...entryPhoto,
+                      backendSubmissionId: submission.id,
+                      imageReference: submission.image_reference,
+                      uploaded: true,
+                      photo: { ...entryPhoto.photo, file: undefined, url: uploadedUrl },
+                    }
+                  : entryPhoto),
+              }
+            : entry),
+        };
+        setHunt(currentHunt);
+      }
+      currentHunt = {
+        ...currentHunt,
+        participants: currentHunt.participants.map((entry) =>
+          entry.id === participantId ? { ...entry, submitted: true } : entry,
+        ),
+      };
+      setHunt(currentHunt);
+      const [updated, standings] = await Promise.all([
+        loadHunt(currentHunt.id, currentHunt),
+        loadLeaderboard(currentHunt),
+      ]);
+      setHunt(updated);
+      setLiveStandings(standings);
+      if (updated.status === "active") setScreen("hunting");
+    } catch (error) {
+      setUploadError(error.message);
+    } finally {
+      actionInFlightRef.current = false;
+      setPending("");
     }
   }
 
-  function finalizeResults(currentHunt = hunt) {
-    const completed = {
-      ...currentHunt,
-      status: "completed",
-      completedAt: currentHunt.completedAt ?? new Date().toISOString(),
-    };
-    const finalResults = createFinalCompetitionResults(completed);
-    completed.teamStandings = finalResults.teamStandings;
-    completed.winnerTeamId = finalResults.winnerTeamId;
-    setHunt(completed);
-    setResults(finalResults);
-    setScreen("results");
+  async function finalizeResults(currentHunt = huntRef.current) {
+    if (actionInFlightRef.current || !currentHunt) return;
+    actionInFlightRef.current = true;
+    setPending("finalize");
+    setUploadError("");
+    try {
+      let completed = currentHunt;
+      if (completed.status !== "completed") {
+        completed = await completeCompetition(completed);
+      } else {
+        completed = await loadHunt(completed.id, completed);
+      }
+      const [officialStandings, latest] = await Promise.all([
+        loadLeaderboard(completed),
+        loadHunt(completed.id, completed),
+      ]);
+      const mockResults = createFinalCompetitionResults(latest);
+      const finalStandings = officialStandings.map((standing) => {
+        const mockTeam = mockResults.teamStandings.find((team) => team.id === standing.id);
+        return { ...mockTeam, ...standing, individualStandings: mockTeam?.individualStandings ?? [] };
+      });
+      const winningTeam = finalStandings.find((team) => team.submissionCount > 0) ?? null;
+      const finalResults = {
+        ...mockResults,
+        teamStandings: finalStandings,
+        winnerTeamId: winningTeam?.id ?? null,
+        winnerExplanation: winningTeam
+          ? "This provisional result follows the server leaderboard. Official AI scoring is not enabled yet."
+          : "The Hunt ended before any team submitted photographs.",
+      };
+      const finalHunt = { ...latest, winnerTeamId: finalResults.winnerTeamId };
+      setHunt(finalHunt);
+      setLiveStandings(finalStandings);
+      setResults(finalResults);
+      setScreen("results");
+    } catch (error) {
+      setUploadError(error.message);
+    } finally {
+      actionInFlightRef.current = false;
+      setPending("");
+    }
+  }
+
+  function selectParticipant(participantId) {
+    setActiveParticipantId(participantId);
+    if (hunt) storeParticipantSession(hunt.id, participantId);
   }
 
   function exitHunt() {
@@ -938,7 +1221,21 @@ export default function ColorHunt({ onExit }) {
   }
 
   if (screen === "home") {
-    return <ColorHuntHome onCreate={() => setScreen("create")} onJoin={() => setScreen("join")} onBack={onExit} />;
+    return (
+      <ColorHuntHome
+        backendAvailable={backendAvailable}
+        onCreate={() => { setJoinError(""); setScreen("create"); }}
+        onJoin={() => {
+          setHunt(null);
+          setJoinCode("");
+          setJoinTeamId("");
+          setJoinReturnScreen("home");
+          setJoinError("");
+          setScreen("join");
+        }}
+        onBack={onExit}
+      />
+    );
   }
   if (screen === "create") {
     return (
@@ -950,6 +1247,7 @@ export default function ColorHunt({ onExit }) {
         name={huntName}
         onBack={() => setScreen("home")}
         onCreate={createNewHunt}
+        pending={pending === "create"}
         organizer={organizer}
         rewardPlaces={rewardPlaces}
         rewards={rewards}
@@ -975,8 +1273,9 @@ export default function ColorHunt({ onExit }) {
         code={joinCode}
         error={joinError}
         hunt={hunt}
-        onBack={() => setScreen(hunt ? "lobby" : "home")}
+        onBack={() => setScreen(joinReturnScreen === "lobby" && hunt ? "lobby" : "home")}
         onJoin={joinExistingHunt}
+        pending={pending === "join"}
         person={joinPerson}
         setCode={setJoinCode}
         setPerson={setJoinPerson}
@@ -990,20 +1289,33 @@ export default function ColorHunt({ onExit }) {
       <HuntLobby
         hunt={hunt}
         onBack={() => setScreen("home")}
-        onJoin={() => { setJoinError(""); setScreen("join"); }}
+        error={joinError}
+        onRefresh={refreshHunt}
+        onJoin={() => {
+          setJoinError("");
+          setJoinCode(hunt.code);
+          setJoinTeamId("");
+          setJoinReturnScreen("lobby");
+          setScreen("join");
+        }}
         onStart={startCompetition}
         participantId={activeParticipantId}
+        refreshPending={pending === "refresh"}
+        startPending={pending === "start"}
       />
     );
   }
   if (screen === "hunting") {
     const participant = hunt.participants.find((entry) => entry.id === activeParticipantId) ?? hunt.participants.find((entry) => entry.teamId);
-    const team = hunt.teams.find((entry) => entry.id === participant.teamId);
+    const team = hunt.teams.find((entry) => entry.id === participant?.teamId);
+    if (!participant || !team) {
+      return <ColorHuntHome backendAvailable={backendAvailable} onBack={onExit} onCreate={() => setScreen("create")} onJoin={() => setScreen("join")} />;
+    }
     return (
       <HuntCountdown
         hunt={hunt}
         onEnd={closeHunt}
-        onParticipantChange={setActiveParticipantId}
+        onParticipantChange={selectParticipant}
         onSubmitPhotos={() => setScreen("submissions")}
         participant={participant}
         remainingSeconds={remainingSeconds}
@@ -1021,9 +1333,13 @@ export default function ColorHunt({ onExit }) {
         onAddFiles={addSubmissionPhotos}
         onFinalize={() => finalizeResults()}
         onRemovePhoto={removePhoto}
-        onReturnToHunt={() => setScreen("hunting")}
+        onReturnToHunt={() => {
+          if (hunt.status === "active" && remainingSeconds > 0) setScreen("hunting");
+        }}
         onSubmit={submitParticipant}
         setActiveParticipantId={setActiveParticipantId}
+        pending={pending === "submission" || pending === "finalize"}
+        canReturnToHunt={hunt.status === "active" && remainingSeconds > 0}
       />
     );
   }

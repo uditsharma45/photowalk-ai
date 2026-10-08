@@ -544,6 +544,21 @@ export default function App() {
     setPhotoError("");
   }
 
+  function recordUploadedPhoto(photoId, asset) {
+    const originalPhoto = selectedPhotos.find((photo) => photo.id === photoId);
+    if (originalPhoto?.url?.startsWith("blob:")) {
+      URL.revokeObjectURL(originalPhoto.url);
+      photoUrlsRef.current.delete(originalPhoto.url);
+    }
+    setSelectedPhotos((photos) =>
+      photos.map((photo) =>
+        photo.id === photoId
+          ? { ...photo, ...asset, file: undefined, uploaded: true, url: asset.url }
+          : photo,
+      ),
+    );
+  }
+
   function finishPhotoResults() {
     clearSession();
     setScreen("landing");
@@ -610,6 +625,7 @@ export default function App() {
           photos={selectedPhotos}
           error={photoError}
           onAddFiles={addPhotos}
+          onPhotoUploaded={recordUploadedPhoto}
           onRemovePhoto={removePhoto}
           onBack={() => setScreen("walk")}
           onContinue={showWalkResults}

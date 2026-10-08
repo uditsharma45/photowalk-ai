@@ -4,20 +4,26 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes.health import router as health_router
 from app.api.routes.hunts import router as hunts_router
 from app.api.routes.participants import router as participants_router
+from app.api.routes.photos import router as photos_router
+from app.api.routes.submission_photos import router as submission_photos_router
 from app.api.routes.submissions import router as submissions_router
 from app.api.routes.teams import router as teams_router
-from app.database import Base, engine
+from app.database import Base, engine, upgrade_submission_image_columns
 from app import models
+from app.services.image_storage import upload_root
 from app.services.errors import ConflictError, InvalidRelationshipError, NotFoundError
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    upgrade_submission_image_columns()
+    upload_root().mkdir(parents=True, exist_ok=True)
     yield
 
 
@@ -46,6 +52,9 @@ app.include_router(hunts_router, prefix="/api")
 app.include_router(teams_router, prefix="/api")
 app.include_router(participants_router, prefix="/api")
 app.include_router(submissions_router, prefix="/api")
+app.include_router(photos_router, prefix="/api")
+app.include_router(submission_photos_router, prefix="/api")
+app.mount("/uploads", StaticFiles(directory=str(upload_root()), check_dir=False), name="uploads")
 
 
 @app.exception_handler(NotFoundError)
